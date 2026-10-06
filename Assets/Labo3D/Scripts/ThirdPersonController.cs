@@ -4,8 +4,8 @@ using UnityEngine.InputSystem;
 namespace Labo3D
 {
     /// <summary>
-    /// Déplacement troisième personne. La souris orbite, ZQSD (WASD physique)
-    /// avance par rapport à l'orientation horizontale de la caméra.
+    /// Déplacement troisième personne. La souris orbite, le déplacement et le
+    /// saut viennent des actions projet Player/Move, Player/Look et Player/Jump.
     /// </summary>
     [RequireComponent(typeof(CharacterController))]
     public class ThirdPersonController : MonoBehaviour
@@ -22,6 +22,9 @@ namespace Labo3D
         [SerializeField] float turnSpeed = 12f;
 
         CharacterController body;
+        InputAction moveAction;
+        InputAction lookAction;
+        InputAction jumpAction;
         float verticalVelocity;
         float yaw;
         float pitch = 18f;
@@ -35,18 +38,39 @@ namespace Labo3D
 
         void OnEnable()
         {
-            // Le clic dans la vue Jeu capture la souris. On ne la prend pas
-            // dès l'entrée en lecture, sinon l'éditeur vole le curseur.
+            InputActionAsset actions = InputSystem.actions;
+            if (actions == null)
+            {
+                Debug.LogError(
+                    "ThirdPersonController : InputSystem.actions est vide. Assigne InputSystem_Actions dans Project Settings > Input System Package.",
+                    this);
+                return;
+            }
+
+            moveAction = actions.FindAction("Player/Move", throwIfNotFound: false);
+            lookAction = actions.FindAction("Player/Look", throwIfNotFound: false);
+            jumpAction = actions.FindAction("Player/Jump", throwIfNotFound: false);
+
+            if (moveAction == null || lookAction == null || jumpAction == null)
+            {
+                Debug.LogError(
+                    "ThirdPersonController : la map Player doit exposer Move, Look et Jump.",
+                    this);
+            }
         }
 
         void OnDisable()
         {
+            moveAction = null;
+            lookAction = null;
+            jumpAction = null;
             Cursor.lockState = CursorLockMode.None;
             Cursor.visible = true;
         }
 
         void Update()
         {
+            // La capture du curseur reste locale à la vue Jeu. Ce n'est pas un déplacement.
             Keyboard keyboard = Keyboard.current;
             Mouse mouse = Mouse.current;
 
@@ -60,9 +84,9 @@ namespace Labo3D
                 LockCursor();
 
             if (Cursor.lockState == CursorLockMode.Locked)
-                Look(mouse);
+                Look();
 
-            Move(keyboard);
+            Move();
         }
 
         void LateUpdate()
@@ -70,19 +94,19 @@ namespace Labo3D
             PlaceCamera();
         }
 
-        void Look(Mouse mouse)
+        void Look()
         {
-            if (mouse == null)
+            if (lookAction == null)
                 return;
 
-            Vector2 delta = mouse.delta.ReadValue();
+            Vector2 delta = lookAction.ReadValue<Vector2>();
             yaw += delta.x * lookSensitivity;
             pitch = Mathf.Clamp(pitch - delta.y * lookSensitivity, minPitch, maxPitch);
         }
 
-        void Move(Keyboard keyboard)
+        void Move()
         {
-            Vector2 move = ReadMove(keyboard);
+            Vector2 move = moveAction != null ? moveAction.ReadValue<Vector2>() : Vector2.zero;
             Quaternion yawRotation = Quaternion.Euler(0f, yaw, 0f);
             Vector3 wish = yawRotation * new Vector3(move.x, 0f, move.y);
             if (wish.sqrMagnitude > 1f)
@@ -98,7 +122,7 @@ namespace Labo3D
             if (body.isGrounded && verticalVelocity < 0f)
                 verticalVelocity = -2f;
 
-            if (body.isGrounded && keyboard != null && keyboard.spaceKey.wasPressedThisFrame)
+            if (body.isGrounded && jumpAction != null && jumpAction.WasPressedThisFrame())
                 verticalVelocity = Mathf.Sqrt(jumpHeight * -2f * gravity);
 
             verticalVelocity += gravity * Time.deltaTime;
@@ -117,22 +141,6 @@ namespace Labo3D
             Vector3 focus = transform.position + Vector3.up * focusHeight;
             Vector3 position = focus + orbit * new Vector3(0f, 0f, -cameraDistance);
             viewCamera.transform.SetPositionAndRotation(position, orbit);
-        }
-
-        static Vector2 ReadMove(Keyboard keyboard)
-        {
-            if (keyboard == null)
-                return Vector2.zero;
-
-            // Key.W / A / S / D sont les positions physiques d'un clavier QWERTY.
-            // Sur un AZERTY, ces mêmes touches écrivent Z Q S D.
-            float x = 0f;
-            float y = 0f;
-            if (keyboard.dKey.isPressed || keyboard.rightArrowKey.isPressed) x += 1f;
-            if (keyboard.aKey.isPressed || keyboard.leftArrowKey.isPressed) x -= 1f;
-            if (keyboard.wKey.isPressed || keyboard.upArrowKey.isPressed) y += 1f;
-            if (keyboard.sKey.isPressed || keyboard.downArrowKey.isPressed) y -= 1f;
-            return new Vector2(x, y);
         }
 
         static void LockCursor()
